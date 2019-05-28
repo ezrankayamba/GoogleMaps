@@ -1,15 +1,7 @@
 package tz.co.nezatech.apps.googlemaps;
 
-import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
-import androidx.appcompat.app.AppCompatActivity;
-import androidx.appcompat.widget.Toolbar;
-import androidx.core.app.ActivityCompat;
-import androidx.fragment.app.FragmentActivity;
-
 import android.Manifest;
 import android.app.AlertDialog;
-import android.app.SearchManager;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
@@ -19,15 +11,16 @@ import android.location.LocationManager;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.util.Log;
-import android.view.Menu;
-import android.view.MenuInflater;
-import android.view.MenuItem;
-import android.widget.SearchView;
 import android.widget.Toast;
 
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
+
 import com.google.android.gms.common.ConnectionResult;
-import com.google.android.gms.common.api.ApiException;
 import com.google.android.gms.common.api.GoogleApiClient;
+import com.google.android.gms.common.api.Status;
 import com.google.android.gms.location.LocationListener;
 import com.google.android.gms.location.LocationRequest;
 import com.google.android.gms.location.LocationServices;
@@ -38,28 +31,26 @@ import com.google.android.gms.maps.SupportMapFragment;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.MarkerOptions;
 import com.google.android.libraries.places.api.Places;
-import com.google.android.libraries.places.api.model.AutocompletePrediction;
-import com.google.android.libraries.places.api.model.AutocompleteSessionToken;
-import com.google.android.libraries.places.api.model.RectangularBounds;
-import com.google.android.libraries.places.api.model.TypeFilter;
-import com.google.android.libraries.places.api.net.FindAutocompletePredictionsRequest;
-import com.google.android.libraries.places.api.net.PlacesClient;
+import com.google.android.libraries.places.api.model.Place;
+import com.google.android.libraries.places.widget.AutocompleteSupportFragment;
+import com.google.android.libraries.places.widget.listener.PlaceSelectionListener;
 import com.karumi.dexter.Dexter;
 import com.karumi.dexter.PermissionToken;
 import com.karumi.dexter.listener.PermissionDeniedResponse;
 import com.karumi.dexter.listener.PermissionGrantedResponse;
 import com.karumi.dexter.listener.single.PermissionListener;
 
+import java.util.Arrays;
+
 public class MapsActivity extends AppCompatActivity implements OnMapReadyCallback,
         GoogleApiClient.ConnectionCallbacks,
         GoogleApiClient.OnConnectionFailedListener,
-        LocationListener, SearchView.OnQueryTextListener {
+        LocationListener {
 
     private static final String TAG = MapsActivity.class.getSimpleName();
     private GoogleMap mMap;
     private GoogleApiClient mGoogleApiClient;
     private Location mLocation;
-    private LocationManager mLocationManager;
     private LocationRequest mLocationRequest;
     private com.google.android.gms.location.LocationListener listener;
     private long UPDATE_INTERVAL = 2 * 1000;  /* 10 secs */
@@ -68,20 +59,13 @@ public class MapsActivity extends AppCompatActivity implements OnMapReadyCallbac
     private LocationManager locationManager;
     private LatLng latLng;
     private boolean isPermission;
-    private PlacesClient placesClient;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_maps);
 
-        Toolbar toolbar = findViewById(R.id.toolbar);
-        setSupportActionBar(toolbar);
-
-
         if (requestSinglePermission()) {
-            // Obtain the SupportMapFragment and get notified when the map is ready to be used.
-            //it was pre written
             SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager()
                     .findFragmentById(R.id.map);
             mapFragment.getMapAsync(this);
@@ -92,92 +76,66 @@ public class MapsActivity extends AppCompatActivity implements OnMapReadyCallbac
                     .addApi(LocationServices.API)
                     .build();
 
-            mLocationManager = (LocationManager) this.getSystemService(Context.LOCATION_SERVICE);
-
             checkLocation(); //check whether location service is enable or not in your  phone
+            initAutoComplete();
         }
+
     }
 
-    private void searchPlaces(String query) {
-        AutocompleteSessionToken token = AutocompleteSessionToken.newInstance();
-        double lat1 = latLng.latitude + 0.1;
-        double lat2 = latLng.latitude - 0.1;
-        double lon1 = latLng.longitude + 0.1;
-        double lon2 = latLng.longitude - 0.1;
-        RectangularBounds bounds = RectangularBounds.newInstance(
-                new LatLng(lat2,lon2),
-                new LatLng(lat1,lon1));
+    private void initAutoComplete() {
+        AutocompleteSupportFragment autocompleteFragment = (AutocompleteSupportFragment)
+                getSupportFragmentManager().findFragmentById(R.id.autocomplete_fragment);
 
-        FindAutocompletePredictionsRequest request = FindAutocompletePredictionsRequest.builder()
-                .setLocationBias(bounds)
-                .setCountry("tz")
-                .setTypeFilter(TypeFilter.ADDRESS)
-                .setSessionToken(token)
-                .setQuery(query)
-                .build();
+        autocompleteFragment.setPlaceFields(Arrays.asList(Place.Field.ID, Place.Field.NAME));
 
-        placesClient.findAutocompletePredictions(request).addOnSuccessListener((response) -> {
-            for (AutocompletePrediction prediction : response.getAutocompletePredictions()) {
-                Log.i(TAG, prediction.getPlaceId());
-                Log.i(TAG, prediction.getPrimaryText(null).toString());
+        autocompleteFragment.setOnPlaceSelectedListener(new PlaceSelectionListener() {
+            @Override
+            public void onPlaceSelected(Place place) {
+                Log.i(TAG, "Place: " + place.getName() + ", " + place.getId());
             }
-        }).addOnFailureListener((exception) -> {
-            if (exception instanceof ApiException) {
-                ApiException apiException = (ApiException) exception;
-                Log.e(TAG, "Place not found: " + apiException.getStatusCode());
+
+            @Override
+            public void onError(Status status) {
+                Log.i(TAG, "An error occurred: " + status);
             }
         });
     }
+
+    int mMapReadyCount = 0;
 
     @Override
     public void onMapReady(GoogleMap googleMap) {
         mMap = googleMap;
 
+        Log.d(TAG, "Map ready: " + (++mMapReadyCount));
+
         mMap.setMinZoomPreference(15.0f);
         mMap.setMaxZoomPreference(20.0f);
         if (latLng != null) {
+            mMap.clear();
             mMap.addMarker(new MarkerOptions().position(latLng).title(getString(R.string.marker_in_current_location)));
             mMap.moveCamera(CameraUpdateFactory.newLatLng(latLng));
         }
 
-        // Initialize Places.
         if (!Places.isInitialized()) {
             Places.initialize(getApplicationContext(), getString(R.string.google_maps_key));
             Log.d(TAG, "Initialized places");
         }
-        placesClient = Places.createClient(this);
     }
 
-    public boolean onCreateOptionsMenu(Menu menu) {
-        MenuInflater menuInflater = getMenuInflater();
-        menuInflater.inflate(R.menu.map, menu);
+    public float distance(float lat_a, float lng_a, float lat_b, float lng_b) {
+        double earthRadius = 3958.75;
+        double latDiff = Math.toRadians(lat_b - lat_a);
+        double lngDiff = Math.toRadians(lng_b - lng_a);
+        double a = Math.sin(latDiff / 2) * Math.sin(latDiff / 2) +
+                Math.cos(Math.toRadians(lat_a)) * Math.cos(Math.toRadians(lat_b)) *
+                        Math.sin(lngDiff / 2) * Math.sin(lngDiff / 2);
+        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        double distance = earthRadius * c;
 
-        MenuItem searchItem = menu.findItem(R.id.action_search);
+        int meterConversion = 1609;
 
-        SearchManager searchManager = (SearchManager) MapsActivity.this.getSystemService(Context.SEARCH_SERVICE);
-
-        SearchView searchView = null;
-        if (searchItem != null) {
-            searchView = (SearchView) searchItem.getActionView();
-        }
-        if (searchView != null) {
-            searchView.setSearchableInfo(searchManager.getSearchableInfo(MapsActivity.this.getComponentName()));
-            searchView.setSubmitButtonEnabled(true);
-            searchView.setOnQueryTextListener(this);
-        }
-        return super.onCreateOptionsMenu(menu);
-    }
-
-    @Override
-    public boolean onQueryTextSubmit(String query) {
-        Log.d(TAG, "Query: " + query);
-        searchPlaces(query);
-        return true;
-    }
-
-    @Override
-    public boolean onQueryTextChange(String newText) {
-        return false;
+        return new Float(distance * meterConversion).floatValue();
     }
 
     @Override
@@ -198,13 +156,6 @@ public class MapsActivity extends AppCompatActivity implements OnMapReadyCallbac
         if (mLocation == null) {
             startLocationUpdates();
         }
-        if (mLocation != null) {
-
-            // mLatitudeTextView.setText(String.valueOf(mLocation.getLatitude()));
-            //mLongitudeTextView.setText(String.valueOf(mLocation.getLongitude()));
-        } else {
-            Toast.makeText(this, "Location not Detected", Toast.LENGTH_SHORT).show();
-        }
     }
 
     @Override
@@ -223,38 +174,25 @@ public class MapsActivity extends AppCompatActivity implements OnMapReadyCallbac
         String msg = "Updated Location: " +
                 location.getLatitude() + "," +
                 location.getLongitude();
-
-        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show();
-        // You can now create a LatLng Object for use with maps
+        Log.d(TAG, msg);
         latLng = new LatLng(location.getLatitude(), location.getLongitude());
 
-        // Obtain the SupportMapFragment and get notified when the map is ready to be used.
-        //it was pre written
         SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager()
                 .findFragmentById(R.id.map);
         mapFragment.getMapAsync(this);
     }
 
     protected void startLocationUpdates() {
-        // Create the location request
         mLocationRequest = LocationRequest.create()
                 .setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY)
                 .setInterval(UPDATE_INTERVAL)
                 .setFastestInterval(FASTEST_INTERVAL);
-        // Request location updates
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            // TODO: Consider calling
-            //    ActivityCompat#requestPermissions
-            // here to request the missing permissions, and then overriding
-            //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
-            //                                          int[] grantResults)
-            // to handle the case where the user grants the permission. See the documentation
-            // for ActivityCompat#requestPermissions for more details.
             return;
         }
         LocationServices.FusedLocationApi.requestLocationUpdates(mGoogleApiClient,
                 mLocationRequest, this);
-        Log.d("reque", "--->>>>");
+        Log.d("Request", "--->>>>");
     }
 
     @Override
@@ -311,14 +249,12 @@ public class MapsActivity extends AppCompatActivity implements OnMapReadyCallbac
                 .withListener(new PermissionListener() {
                     @Override
                     public void onPermissionGranted(PermissionGrantedResponse response) {
-                        //Single Permission is granted
-                        Toast.makeText(MapsActivity.this, "Single permission is granted!", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(MapsActivity.this, "Permission is granted!", Toast.LENGTH_SHORT).show();
                         isPermission = true;
                     }
 
                     @Override
                     public void onPermissionDenied(PermissionDeniedResponse response) {
-                        // check for permanent denial of permission
                         if (response.isPermanentlyDenied()) {
                             isPermission = false;
                         }
@@ -331,6 +267,5 @@ public class MapsActivity extends AppCompatActivity implements OnMapReadyCallbac
                 }).check();
 
         return isPermission;
-
     }
 }
